@@ -26,8 +26,8 @@ jobs:
                   node-version: 24
                   cache: npm
 
-            -name: Executar testes
-             run: npm test
+            - name: Executar testes
+              run: npm test
 
     docker-build:
         name: Docker Build
