@@ -16,6 +16,14 @@ const hostname = '0.0.0.0';
 const server = http.createServer(async (req, res) => {
 	res.setHeader('Content-Type', 'application/json');
 
+	if (req.url === '/health') {
+		res.statusCode = 200;
+		res.end(JSON.stringify({
+			status: 'UP'
+		}));
+		return;
+	}
+
 	if(req.url === '/pessoas') {
 		try {
 			const resultado = await pool.query('SELECT * FROM pessoas ORDER BY id');
