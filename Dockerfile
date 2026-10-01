@@ -7,6 +7,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY app.js ./
+COPY migrations ./migrations
 
 EXPOSE 3000
 
