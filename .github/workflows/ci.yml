@@ -59,7 +59,7 @@ jobs:
 
     deploy:
         name: Deploy Production
-        runs-on: ubuntu-latest
+        runs-on: self-hosted
         needs: docker-build
 
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -68,15 +68,24 @@ jobs:
             name: production
 
         steps:
-            - name: Mostrar artefato do deployment
+            - name: Mostrar versão
               run: |
-                echo "Deploy autorizado"
                 echo "Commit: ${{ github.sha }}"
                 echo "Imagem ghcr.io/${{ github.repository }}:${{ github.sha }}"
 
-            - name: Simular deployment
+            - name: Atualizar versão
+              working-directory: /home/hyaji/labs/deploy/producao
               run: |
-                echo "Baixando imagem..."
-                echo "Executando migrations..."
-                echo "Atualizando aplicação..."
-                echo "Executando smoke tests..."
+                sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${{ github.sha }}/" .env
+                grep "^IMAGE_TAG=" .env
+
+            - name: Baixar nova imagem
+              working-directory: /home/hyaji/labs/deploy/producao
+              run: docker compose pull api
+
+            - name: Atualizar aplicação
+              working-directory: /home/hyaji/labs/deploy/producao
+              run: docker compose up -d api
+
+            - name: Smoke teste
+              run: curl --fail http://localhost:8080/health
