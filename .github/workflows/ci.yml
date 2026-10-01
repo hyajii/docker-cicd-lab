@@ -88,4 +88,17 @@ jobs:
               run: docker compose up -d api
 
             - name: Smoke teste
-              run: curl --fail http://localhost:8080/health
+              run: |
+                for i in {1..10}; do
+                  if curl --fail --silent http://localhost:8080/health; then
+                    echo
+                    echo "Aplicação saudável"
+                    echo 0
+                  fi
+
+                  echo "Tentativa $i/10 falhou. Aguardando..."
+                  sleep 2
+                done
+
+                echo "Aplicação não ficou disponível a tempo"
+                exit 1
