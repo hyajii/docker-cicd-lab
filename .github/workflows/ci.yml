@@ -56,3 +56,27 @@ jobs:
             - name: Push da imagem
               if: github.event_name == 'push'
               run: docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+    deploy:
+        name: Deploy Production
+        runs-on: ubuntu-latest
+        needs: docker-build
+
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+        environment:
+            name: production
+
+        steps:
+            - name: Mostrar artefato do deployment
+              run: |
+                echo "Deploy autorizado"
+                echo "Commit: ${{ github.sha }}"
+                echo "Imagem ghcr.io/${{ github.repository }}:${{ github.sha }}"
+
+            - name: Simular deployment
+              run: |
+                echo "Baixando imagem..."
+                echo "Executando migrations..."
+                echo "Atualizando aplicação..."
+                echo "Executando smoke tests..."
