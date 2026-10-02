@@ -85,7 +85,7 @@ jobs:
                   INACTIVE="blue"
                   PORT="3001"
                 fi
-                
+
                 echo "ACTIVE_SLOT=$ACTIVE" >> "$GITHUB_ENV"
                 echo "INACTIVE_SLOT=$INACTIVE" >> "$GITHUB_ENV"
                 echo "INACTIVE_PORT=$PORT" >> "$GITHUB_ENV"
@@ -133,6 +133,8 @@ jobs:
                 ./switch-slot.sh "$INACTIVE_SLOT"
 
             - name: Validar produção
+              id: production-check
+              continue-on-error: true
               run: |
                 for i in {1..5}; do
                   if curl --fail --silent http://localhost:8080/health; then
@@ -146,4 +148,36 @@ jobs:
                 done
 
                 echo "Produção falhou após o switch"
+                exit 1
+
+            - name: Rollback de tráfego
+              if: steps.production-check.outcome == 'failure'
+              working-directory: /home/hyaji/labs/deploy/producao
+              run: |
+                echo "Nova versão falhou após promoção."
+                echo "Retornando tráfego para $ACTIVE_SLOT"
+
+                ./switch-slot.sh "$ACTIVE_SLOT"
+
+            - name: Validar rollback
+              if: steps.production-check.outcome == 'failure'
+              run: |
+                for i in {1..5}; do
+                  if curl --fail --silent http://localhost:8080/health; then
+                    echo
+                    echo "Rollback concluído. Produção saudável em $ACTIVE_SLOT"
+                    exit 0
+                  fi
+
+                  echo "Tentativa de recuperação $i/5 falhou"
+                  sleep 2
+                done
+
+                echo "ERRO: rollback não recuperou produção"
+                exit 1
+
+            - name: Marcar deployment como falha
+              if: steps.production-check.outcome == 'failure'
+              run: |
+                echo "Deployment falhou após promoção e foi revertido para $ACTIVE_SLOT."
                 exit 1
