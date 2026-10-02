@@ -58,7 +58,7 @@ jobs:
               run: docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
 
     deploy:
-        name: Deploy Production
+        name: Deploy Production Blue Green
         runs-on: self-hosted
         needs: docker-build
 
@@ -73,75 +73,77 @@ jobs:
                 echo "Commit: ${{ github.sha }}"
                 echo "Imagem ghcr.io/${{ github.repository }}:${{ github.sha }}"
 
-            - name: Guardar versão atual
+            - name: Descobrir slots
               working-directory: /home/hyaji/labs/deploy/producao
               run: |
-                CURRENT_TAG=$(grep '^IMAGE_TAG=' .env | cut -d'=' -f2)
-                echo "Versão atualmente em produção: $CURRENT_TAG"
-                echo "PREVIOUS_TAG=$CURRENT_TAG" >> "$GITHUB_ENV"
+                ACTIVE=$(cat active-slot)
 
-            - name: Atualizar versão
+                if [ "$ACTIVE" = "blue" ]; then
+                  INACTIVE="green"
+                  PORT="3002"
+                else
+                  INACTIVE="blue"
+                  PORT="3001"
+                fi
+                
+                echo "ACTIVE_SLOT=$ACTIVE" >> "$GITHUB_ENV"
+                echo "INACTIVE_SLOT=$INACTIVE" >> "$GITHUB_ENV"
+                echo "INACTIVE_PORT=$PORT" >> "$GITHUB_ENV"
+
+                echo "Ativo: $ACTIVE"
+                echo "Depoly será feito em: $INACTIVE"
+
+            - name: Configurar nova versão
               working-directory: /home/hyaji/labs/deploy/producao
               run: |
-                sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${{ github.sha }}/" .env
-                grep "^IMAGE_TAG=" .env
+                if [ "$INACTIVE_SLOT" = "blue" ]; then
+                  sed -i "s/^BLUE_TAG=.*/BLUE_TAG=${{ github.sha }}/" .env
+                else
+                  sed -i "s/^GREEN_TAG=.*/GREEN_TAG=${{ github.sha }}/" .env
+                fi
 
-            - name: Baixar nova imagem
+                grep "_TAG=" .env
+
+            - name: Deploy no slot inativo
               working-directory: /home/hyaji/labs/deploy/producao
-              run: docker compose pull api
+              run: |
+                docker compose pull api-$INACTIVE_SLOT
+                docker compose up -d api-$INACTIVE_SLOT
 
-            - name: Atualizar aplicação
-              working-directory: /home/hyaji/labs/deploy/producao
-              run: docker compose up -d api
-
-            - name: Smoke teste
+            - name: Smoke test candidato
               id: smoke-test
-              continue-on-error: true
               run: |
                 for i in {1..10}; do
-                  if curl --fail --silent http://localhost:8080/health; then
+                  if curl --fail --silent http://localhost:$INACTIVE_PORT/health; then
                     echo
-                    echo "Aplicação saudável"
+                    echo "$INACTIVE_SLOT está saudável"
                     exit 0
                   fi
 
-                  echo "Tentativa $i/10 falhou. Aguardando..."
+                  echo "Tentativa $i/10 falhou"
                   sleep 2
                 done
 
-                echo "Aplicação não ficou disponível a tempo"
+                echo "$INACTIVE_SLOT não ficou saudável"
                 exit 1
 
-            - name: Rollback
-              if: steps.smoke-test.outcome == 'failure'
+            - name: Promover candidato
               working-directory: /home/hyaji/labs/deploy/producao
               run: |
-                echo "Smoke test falhou."
-                echo "Voltando para: $PREVIOUS_TAG"
+                ./switch-slot.sh "$INACTIVE_SLOT"
 
-                sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREVIOUS_TAG/" .env
-
-                docker compose up -d api
-
-            - name: Validar rollback
-              if: steps.smoke-test.outcome == 'failure'
+            - name: Validar produção
               run: |
-                for i in {1..10}; do
+                for i in {1..5}; do
                   if curl --fail --silent http://localhost:8080/health; then
                     echo
-                    echo "Rollback concluído e aplicação saudável"
+                    echo "Produção saudável"
                     exit 0
                   fi
 
-                  echo "Aguardando versão anterior..."
+                  echo "Tentativa $i/5 falhou"
                   sleep 2
                 done
 
-                echo "ERRO: rollback não recuperou a aplicação"
-                exit 1
-
-            - name: Marcar deployment como falha
-              if: steps.smoke-test.outcome == 'failure'
-              run: |
-                echo "A nova versão falhou e foi realizado rollback"
+                echo "Produção falhou após o switch"
                 exit 1
