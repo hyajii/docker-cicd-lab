@@ -73,6 +73,13 @@ jobs:
                 echo "Commit: ${{ github.sha }}"
                 echo "Imagem ghcr.io/${{ github.repository }}:${{ github.sha }}"
 
+            - name: Guardar versão atual
+              working-directory: /home/hyaji/labs/deploy/producao
+              run: |
+                CURRENT_TAG=$(grep '^IMAGE_TAG=' .env | cut -d'=' -f2)
+                echo "Versão atualmente em produção: $CURRENT_TAG"
+                echo "PREVIOUS_TAG=$CURRENT_TAG" >> "$GITHUB_ENV"
+
             - name: Atualizar versão
               working-directory: /home/hyaji/labs/deploy/producao
               run: |
@@ -88,6 +95,8 @@ jobs:
               run: docker compose up -d api
 
             - name: Smoke teste
+              id: smoke-test
+              continue-on-error: true
               run: |
                 for i in {1..10}; do
                   if curl --fail --silent http://localhost:8080/health; then
@@ -101,4 +110,38 @@ jobs:
                 done
 
                 echo "Aplicação não ficou disponível a tempo"
+                exit 1
+
+            - name: Rollback
+              if: steps.smoke-test.outcome == 'failure'
+              working-directory: /home/hyaji/labs/deploy/producao
+              run: |
+                echo "Smoke test falhou."
+                echo "Voltando para: $PREVIOUS_TAG"
+
+                sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREVIOUS_TAG/" .env
+
+                docker compose up -d api
+
+            - name: Validar rollback
+              if: steps.smoke-test.outcome == 'failure'
+              run: |
+                for i in {1..10}; do
+                  if curl --fail --silent http://localhost:8080/health; then
+                    echo
+                    echo "Rollback concluído e aplicação saudável"
+                    exit 0
+                  fi
+
+                  echo "Aguardando versão anterior..."
+                  sleep 2
+                done
+
+                echo "ERRO: rollback não recuperou a aplicação"
+                exit 1
+
+            - name: Marcar deployment como falha
+              if: steps.smoke-test.outcome == 'failure'
+              run: |
+                echo "A nova versão falhou e foi realizado rollback"
                 exit 1
