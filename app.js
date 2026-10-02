@@ -17,9 +17,9 @@ const server = http.createServer(async (req, res) => {
 	res.setHeader('Content-Type', 'application/json');
 
 	if (req.url === '/health') {
-		res.statusCode = 200;
+		res.statusCode = 500;
 		res.end(JSON.stringify({
-			status: 'UP'
+			status: 'DOWN'
 		}));
 		return;
 	}
