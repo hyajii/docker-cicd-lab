@@ -43,7 +43,7 @@ const server = http.createServer(async (req, res) => {
 	res.statusCode = 200
 
 	res.end(JSON.stringify({
-		message: 'API funcionando',
+		message: 'API funcionando normalmente!',
 		hostname: require('os').hostname()
 	}));
 });
